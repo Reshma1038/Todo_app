@@ -1,0 +1,13 @@
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+pymongo==4.9.2
+pydantic==2.10.3
+pydantic-settings==2.6.1
+email-validator==2.2.0
+python-jose[cryptography]==3.3.0
+# Password hashing uses the bcrypt library directly (no passlib):
+# works identically on bcrypt 4.x and 5.x.
+bcrypt>=4.0.1
+python-dotenv==1.0.1
+# Verifies Google ID tokens for "Sign in with Google".
+google-auth==2.36.0
