@@ -1,5 +1,6 @@
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { todoApi } from "../api/todoApi";
+import { useAuth } from "../context/AuthContext";
 import { useToast } from "../context/ToastContext";
 import { getDueState, toDateOnlyString } from "../utils/due";
 import { formatDateOnly } from "../utils/format";
@@ -7,19 +8,37 @@ import { formatDateOnly } from "../utils/format";
 const POLL_INTERVAL_MS = 60_000; // re-check every minute
 
 /**
- * Background due-date reminder engine. Mounted once for authenticated
- * users; polls the backend so reminders fire without the user manually
- * checking any page. Notifies via in-app toasts always, and via browser
- * notifications when permission was granted (bell icon in the navbar).
+ * Background due-date reminder engine.
  *
- * Each task is reminded at most once per (id, due_date, status) per
- * browser session to avoid notification spam.
+ * Fires ONLY when a task is actually due today or overdue — and each
+ * reminder is shown at most ONCE PER LOGIN SESSION: shown reminders are
+ * tracked in sessionStorage, so page loads/refreshes never re-show them.
+ * (sessionStorage survives refresh within the tab and clears when the tab
+ * or the session ends; logout clears it too.)
  */
 export default function ReminderWatcher() {
   const toast = useToast();
-  const reminded = useRef(new Set());
+  const { user } = useAuth();
+  const storageKey = user?.id ? `reminded:${user.id}` : null;
+
+  const loadShown = () => {
+    try {
+      return new Set(JSON.parse(sessionStorage.getItem(storageKey) || "[]"));
+    } catch {
+      return new Set();
+    }
+  };
+
+  const saveShown = (set) => {
+    try {
+      sessionStorage.setItem(storageKey, JSON.stringify([...set].slice(-200)));
+    } catch {
+      /* storage full — reminders still work via the in-session window */
+    }
+  };
 
   useEffect(() => {
+    if (!storageKey) return undefined;
     let cancelled = false;
 
     const browserNotify = (title, body) => {
@@ -37,12 +56,14 @@ export default function ReminderWatcher() {
         const res = await todoApi.due();
         if (cancelled) return;
         const today = toDateOnlyString();
+        const shown = loadShown(); // fresh read — respects other tabs too
         for (const todo of res.data) {
           const state = getDueState(todo, today);
           if (!state) continue; // future due dates stay quiet
           const key = `${todo.id}|${todo.due_date}|${todo.status}`;
-          if (reminded.current.has(key)) continue;
-          reminded.current.add(key);
+          if (shown.has(key)) continue; // already reminded this session
+          shown.add(key);
+          saveShown(shown);
 
           const where = todo.page_title ? ` — ${todo.page_title}` : "";
           if (state === "overdue") {
@@ -63,7 +84,7 @@ export default function ReminderWatcher() {
       }
     };
 
-    check(); // immediately on mount / login
+    check(); // on mount — only fires for reminders not yet shown this session
     const intervalId = setInterval(check, POLL_INTERVAL_MS);
     const onFocus = () => check();
     window.addEventListener("focus", onFocus);
@@ -73,7 +94,8 @@ export default function ReminderWatcher() {
       clearInterval(intervalId);
       window.removeEventListener("focus", onFocus);
     };
-  }, [toast]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storageKey, toast]);
 
   return null; // purely behavioral component
 }

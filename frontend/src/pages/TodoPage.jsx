@@ -79,15 +79,24 @@ export default function TodoPage() {
       setPage(pageRes.data);
       setTodos(todosRes.data);
 
-      // Gentle overdue feedback, once per page visit.
+      // Gentle overdue feedback: at most once per task per day per session.
       if (!overdueShown.current) {
         const today = toDateOnlyString();
         const overdue = todosRes.data
           .filter((t) => getDueState(t, today) === "overdue")
           .sort((a, b) => (a.due_date < b.due_date ? -1 : 1));
         if (overdue.length > 0) {
-          overdueShown.current = true;
-          setOverdueNudge({ todo: overdue[0], count: overdue.length });
+          const nudgeKey = `overdue_nudge:${pageId}:${today}:${overdue[0].id}`;
+          try {
+            if (!sessionStorage.getItem(nudgeKey)) {
+              sessionStorage.setItem(nudgeKey, "1");
+              overdueShown.current = true;
+              setOverdueNudge({ todo: overdue[0], count: overdue.length });
+            }
+          } catch {
+            overdueShown.current = true;
+            setOverdueNudge({ todo: overdue[0], count: overdue.length });
+          }
         }
       }
     } catch (err) {

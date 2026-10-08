@@ -24,6 +24,7 @@ from fastapi import HTTPException, status
 from app.core.config import settings
 from app.db.mongodb import todo_pages_collection, todos_collection
 from app.models import to_object_id
+from app.services.analytics_service import get_accessible_todos as get_all_accessible_todos
 
 # ---------------------------------------------------------------------------
 # Rule engine: patterns
@@ -660,8 +661,11 @@ def _llm_answer(question: str, docs: List[Dict[str, Any]], pages_by_id) -> Optio
     ]
     system = (
         "You are a helpful todo-list assistant. Answer the user's question "
-        "using ONLY the task data provided. Be concise (1-3 sentences), "
-        "mention specific task titles when relevant. "
+        "using ONLY the task data provided (each task includes its status: "
+        "pending / in_progress / completed, plus priority and due_date). "
+        "Be concise (1-3 sentences), mention specific task titles when "
+        "relevant, and use ✅ for completed, ⏳ for pending, ⚠️ for overdue "
+        "when listing tasks. "
         f"Today is {date.today().isoformat()}."
     )
     content, provider = _ai_chat(
@@ -735,7 +739,45 @@ def answer_question(text: str, user: Dict[str, Any], page_id: Optional[str] = No
         r"\blist\b|\bshow\b|\bdisplay\b|\bmy tasks\b|\ball tasks\b|\bwhat are my tasks\b",
         t,
     ):
-        if re.search(r"\b(completed|complete|done|finished)\b", t):
+        wants_all = bool(re.search(r"\ball\b|\beverything\b|\bevery task\b", t))
+        wants_completed = bool(re.search(r"\b(completed|complete|done|finished)\b", t))
+
+        # "list ALL my tasks" -> every task with a clear status marker
+        if wants_all and not wants_completed:
+            all_docs, _ = get_all_accessible_todos(user, page_id)
+            if not all_docs:
+                return "You have no tasks yet."
+
+            def status_of(d) -> str:
+                if d.get("status") == "completed":
+                    return "completed"
+                if d.get("due_date") and d["due_date"] < today_str:
+                    return "overdue"
+                if d.get("status") == "in_progress":
+                    return "in_progress"
+                return "pending"
+
+            ICON = {"completed": "✅", "overdue": "⚠️", "pending": "⏳", "in_progress": "⏳"}
+            LABEL = {
+                "completed": "Completed",
+                "overdue": "Overdue",
+                "pending": "Pending",
+                "in_progress": "In Progress",
+            }
+            order = {"overdue": 0, "pending": 1, "in_progress": 1, "completed": 2}
+            ordered = sorted(
+                all_docs,
+                key=lambda d: (order[status_of(d)], d.get("due_date") or "9999", d.get("position", 0)),
+            )
+            lines = []
+            for d in ordered[:15]:
+                st = status_of(d)
+                extra = f", due {d['due_date']}" if d.get("due_date") and st != "completed" else ""
+                lines.append(f'{ICON[st]} "{d.get("title", "")}" — {LABEL[st]}{extra}')
+            more = f"\n…and {len(ordered) - 15} more." if len(ordered) > 15 else ""
+            return f"All {len(all_docs)} task(s):\n" + "\n".join(lines) + more
+
+        if wants_completed:
             done = get_completed_todos(user, page_id)
             if not done:
                 return "No completed tasks yet — finish one and I'll celebrate with you! 🎉"
@@ -792,10 +834,12 @@ def assistant(text: str, user: Dict[str, Any], page_id: Optional[str] = None) ->
     if smalltalk:
         return {"kind": "answer", "answer": smalltalk, "parsed": None, "provider": "rules"}
 
-    # 2) Questions get data-grounded answers.
+    # 2) Questions get data-grounded answers. The LLM sees ALL tasks
+    #    (with their status) so "list all my tasks" works end-to-end;
+    #    the rule path fetches what it needs per question type.
     if detect_intent(text) == "question":
-        docs, pages_by_id = get_pending_todos(user, page_id)
-        llm = _llm_answer(text, docs, pages_by_id)
+        all_docs, pages_by_id = get_all_accessible_todos(user, page_id)
+        llm = _llm_answer(text, all_docs, pages_by_id)
         if llm:
             answer, provider = llm
             return {"kind": "answer", "answer": answer, "parsed": None, "provider": provider}

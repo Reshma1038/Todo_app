@@ -1,6 +1,6 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import ai as ai_router
@@ -38,6 +38,16 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.middleware("http")
+async def add_json_charset(request: Request, call_next):
+    """Declare UTF-8 on JSON responses so older clients (e.g. Windows
+    PowerShell 5.1's Invoke-RestMethod) decode emoji/unicode correctly."""
+    response = await call_next(request)
+    if response.headers.get("content-type") == "application/json":
+        response.headers["content-type"] = "application/json; charset=utf-8"
+    return response
+
 
 app.include_router(auth_router.router)
 app.include_router(pages_router.router)

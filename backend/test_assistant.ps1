@@ -1,4 +1,4 @@
-param([string]$base = $Base)
+﻿param([string]$base = $Base)
 $ErrorActionPreference = "Stop"
 $base = $Base
 $script:failed = 0
@@ -69,10 +69,11 @@ Write-Host "`n=== LIST TASKS (natural language) ===" -ForegroundColor Cyan
 $r = Ask "list down all tasks"
 "  Q: list down all tasks ->`n$($r.answer)"
 Check "kind = answer" ($r.kind -eq "answer") "got $($r.kind)"
-Check "lists all 3 tasks" ($r.answer -match "Fix urgent bug" -and $r.answer -match "Submit report" -and $r.answer -match "Clean desk") "got: $($r.answer)"
-Check "numbered list format" ($r.answer -match "1\.") ""
+Check "ALL view lists every task" ($r.answer -match "Fix urgent bug" -and $r.answer -match "Submit report" -and $r.answer -match "Clean desk") "got: $($r.answer)"
+Check "ALL view has status labels" ($r.answer -match "Overdue" -and $r.answer -match "Pending") "got: $($r.answer)"
+Check "ALL view has status icons" ($r.answer -match "⚠️" -and $r.answer -match "⏳") "got: $($r.answer)"
 $r = Ask "show my tasks"
-Check "show my tasks also lists" ($r.answer -match "Fix urgent bug") "got: $($r.answer)"
+Check "show my tasks -> pending list" ($r.answer -match "pending task" -and $r.answer -match "1\.") "got: $($r.answer)"
 
 # complete one task, then ask for completed list
 $todos = Invoke-RestMethod -Method Get -Uri "$base/pages/$($page.id)/todos" -Headers $h
@@ -81,8 +82,14 @@ Invoke-RestMethod -Method Patch -Uri "$base/todos/$($clean.id)" -Headers $h -Con
 $r = Ask "list completed tasks"
 "  Q: list completed tasks -> $($r.answer)"
 Check "completed list shows done task" ($r.answer -match "Clean desk") "got: $($r.answer)"
-$r = Ask "list all tasks"
-Check "pending list shrinks after completion" ($r.answer -match "2 pending") "got: $($r.answer)"
+$r = Ask "list tasks"
+Check "pending-only list shrinks after completion" ($r.answer -match "2 pending") "got: $($r.answer)"
+
+$r = Ask "list all my tasks"
+"  Q: list all my tasks ->`n$($r.answer)"
+Check "ALL view includes completed task" ($r.answer -match "Clean desk" -and $r.answer -match "Completed") "got: $($r.answer)"
+Check "ALL view includes completed icon" ($r.answer -match "✅") "got: $($r.answer)"
+Check "ALL view still shows pending + overdue" ($r.answer -match "Submit report" -and $r.answer -match "Fix urgent bug") "got: $($r.answer)"
 
 Write-Host "`n=== SECURITY ===" -ForegroundColor Cyan
 try {

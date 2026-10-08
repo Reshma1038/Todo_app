@@ -47,6 +47,14 @@ export function AuthProvider({ children }) {
 
   const logout = () => {
     localStorage.removeItem("token");
+    // Reset per-session reminder tracking so the next login reminds fresh.
+    try {
+      Object.keys(sessionStorage)
+        .filter((k) => k.startsWith("reminded:") || k.startsWith("overdue_nudge:"))
+        .forEach((k) => sessionStorage.removeItem(k));
+    } catch {
+      /* sessionStorage unavailable */
+    }
     setUser(null);
   };
 
