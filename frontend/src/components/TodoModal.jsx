@@ -3,7 +3,7 @@ import { getErrorMessage } from "../api/axios";
 import { todoApi } from "../api/todoApi";
 import { useToast } from "../context/ToastContext";
 import { getDueState } from "../utils/due";
-import { formatDate, formatDateOnly, STATUS_LABELS, PRIORITY_LABELS } from "../utils/format";
+import { formatDate, formatDateOnly, REPEAT_LABELS, STATUS_LABELS, PRIORITY_LABELS } from "../utils/format";
 import { PriorityBadge, StatusBadge } from "./Badges";
 import Modal from "./Modal";
 import { Spinner } from "./Spinner";
@@ -129,6 +129,12 @@ export default function TodoModal({ todo, members, startInEdit = false, onClose,
             {detailRow("Priority", PRIORITY_LABELS[todo.priority])}
             {dueDateRow}
             {detailRow("Category", todo.category)}
+            {detailRow(
+              "Repeat",
+              todo.repeat && todo.repeat !== "none"
+                ? `🔁 ${REPEAT_LABELS[todo.repeat] || todo.repeat}`
+                : "Does not repeat"
+            )}
             {detailRow("Created By", todo.created_by_user?.name)}
             {detailRow("Assigned To", todo.assigned_to_user?.name || "Unassigned")}
             {detailRow("Updated By", todo.updated_by_user?.name)}

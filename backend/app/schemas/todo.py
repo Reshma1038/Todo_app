@@ -6,6 +6,7 @@ from app.schemas.user import UserBrief
 
 TodoStatus = Literal["pending", "in_progress", "completed"]
 TodoPriority = Literal["low", "medium", "high"]
+TodoRepeat = Literal["none", "daily", "weekly", "monthly"]
 
 
 def _clean_title(value: str) -> str:
@@ -34,6 +35,7 @@ class TodoCreateRequest(BaseModel):
     due_date: Optional[str] = None  # ISO date string (YYYY-MM-DD)
     assigned_to: Optional[str] = None
     category: Optional[str] = None
+    repeat: TodoRepeat = "none"  # none | daily | weekly | monthly
 
     @field_validator("title")
     @classmethod
@@ -61,6 +63,7 @@ class TodoUpdateRequest(BaseModel):
     due_date: Optional[str] = None
     assigned_to: Optional[str] = None
     category: Optional[str] = None
+    repeat: Optional[TodoRepeat] = None
 
     @field_validator("title")
     @classmethod
@@ -92,6 +95,9 @@ class TodoResponse(BaseModel):
     priority: str
     due_date: Optional[str] = None
     category: Optional[str] = None
+    repeat: str = "none"
+    series_id: Optional[str] = None
+    parent_id: Optional[str] = None
     position: int
     created_by: str
     assigned_to: Optional[str] = None

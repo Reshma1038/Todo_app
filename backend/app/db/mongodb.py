@@ -47,6 +47,9 @@ def create_indexes() -> None:
         [("page_id", ASCENDING), ("position", ASCENDING)],
         name="ix_todos_page_position",
     )
+    _safe_create_index(
+        todos_collection, [("series_id", ASCENDING)], name="ix_todos_series_id"
+    )
 
 
 def ping() -> bool:

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { aiApi } from "../api/aiApi";
 import { getErrorMessage } from "../api/axios";
 import { useToast } from "../context/ToastContext";
-import { PRIORITY_LABELS, STATUS_LABELS } from "../utils/format";
+import { PRIORITY_LABELS, REPEAT_LABELS, STATUS_LABELS } from "../utils/format";
 import { Spinner } from "./Spinner";
 
 const CATEGORY_SUGGESTIONS = [
@@ -131,8 +131,23 @@ export default function TodoFormFields({ values, onChange, members, autoFocus = 
         </div>
 
         <div>
-          <label className="mb-1 block text-sm font-medium text-slate-700">Assign to</label>
+          <label className="mb-1 block text-sm font-medium text-slate-700">Repeat</label>
           <select
+            value={values.repeat || "none"}
+            onChange={set("repeat")}
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100"
+          >
+            {Object.entries(REPEAT_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>{label}</option>
+            ))}
+          </select>
+          <p className="mt-1 text-xs text-slate-400">
+            Completing a repeating task schedules its next occurrence.
+          </p>
+        </div>
+
+        <div>
+          <label className="mb-1 block text-sm font-medium text-slate-700">Assign to</label>          <select
             value={values.assigned_to || ""}
             onChange={set("assigned_to")}
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100"
@@ -157,6 +172,7 @@ export const EMPTY_TODO_FORM = {
   priority: "medium",
   due_date: "",
   category: "",
+  repeat: "none",
   assigned_to: "",
 };
 
@@ -168,6 +184,7 @@ export function todoToForm(todo) {
     priority: todo.priority || "medium",
     due_date: todo.due_date || "",
     category: todo.category || "",
+    repeat: todo.repeat || "none",
     assigned_to: todo.assigned_to || "",
   };
 }
@@ -180,6 +197,7 @@ export function formToPayload(form) {
     priority: form.priority,
     due_date: form.due_date || null,
     category: form.category?.trim() || null,
+    repeat: form.repeat || "none",
     assigned_to: form.assigned_to || null,
   };
 }

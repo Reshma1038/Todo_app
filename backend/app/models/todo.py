@@ -8,6 +8,7 @@ from app.models.user import serialize_user_brief
 # Allowed values (mirrored by the Pydantic schemas).
 TODO_STATUSES = ("pending", "in_progress", "completed")
 TODO_PRIORITIES = ("low", "medium", "high")
+TODO_REPEATS = ("none", "daily", "weekly", "monthly")
 
 
 def serialize_todo(
@@ -39,6 +40,9 @@ def serialize_todo(
         "priority": doc.get("priority", "medium"),
         "due_date": doc.get("due_date"),
         "category": doc.get("category"),
+        "repeat": doc.get("repeat", "none"),
+        "series_id": str(doc["series_id"]) if doc.get("series_id") else None,
+        "parent_id": str(doc["parent_id"]) if doc.get("parent_id") else None,
         "position": doc.get("position", 0),
         "created_by": str(doc["created_by"]),
         "assigned_to": str(assigned_oid) if assigned_oid else None,

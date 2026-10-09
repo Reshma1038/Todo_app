@@ -10,6 +10,13 @@ export const PRIORITY_LABELS = {
   high: "High",
 };
 
+export const REPEAT_LABELS = {
+  none: "Does not repeat",
+  daily: "Daily",
+  weekly: "Weekly",
+  monthly: "Monthly",
+};
+
 export function formatDate(isoString) {
   if (!isoString) return "—";
   const date = new Date(isoString);

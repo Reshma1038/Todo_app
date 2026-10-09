@@ -1,7 +1,7 @@
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { getDueState } from "../utils/due";
-import { formatDate, formatDateOnly } from "../utils/format";
+import { formatDate, formatDateOnly, REPEAT_LABELS } from "../utils/format";
 import { PriorityBadge, StatusBadge } from "./Badges";
 
 /**
@@ -65,6 +65,15 @@ export default function TodoCard({ todo, onView, onEdit, onDelete, onToggleStatu
             {todo.category && (
               <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-xs font-medium text-slate-500">
                 {todo.category}
+              </span>
+            )}
+            {todo.repeat && todo.repeat !== "none" && (
+              <span
+                title="Repeating task — completing it schedules the next occurrence"
+                className="inline-flex items-center gap-1 rounded-full border border-violet-200 bg-violet-50 px-2.5 py-0.5 text-xs font-medium text-violet-700"
+              >
+                <span aria-hidden="true">🔁</span>
+                {REPEAT_LABELS[todo.repeat] || todo.repeat}
               </span>
             )}
           </div>

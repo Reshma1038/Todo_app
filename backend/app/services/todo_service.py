@@ -5,7 +5,10 @@ from fastapi import HTTPException, status
 
 from app.db.mongodb import todo_pages_collection, todos_collection, users_collection
 from app.models import to_object_id, utcnow
-from app.models.todo import serialize_todo
+from app.models.todo import TODO_REPEATS, serialize_todo
+
+import calendar
+from datetime import date, timedelta
 
 
 def _users_lookup(docs: List[Dict[str, Any]]) -> Dict[ObjectId, Dict[str, Any]]:
@@ -40,12 +43,119 @@ def _assert_assignable(page: Dict[str, Any], assigned_to: Optional[str]) -> Opti
     return oid
 
 
+def _parse_due_day(value: Optional[str]) -> Optional[date]:
+    """Parse a YYYY-MM-DD due-date string; None when missing/invalid."""
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(str(value)[:10])
+    except (ValueError, TypeError):
+        return None
+
+
+def _add_months(day: date, months: int = 1) -> date:
+    """Add months, clamping to month end (Jan 31 -> Feb 28)."""
+    month = day.month - 1 + months
+    year = day.year + month // 12
+    month = month % 12 + 1
+    last_day = calendar.monthrange(year, month)[1]
+    return date(year, month, min(day.day, last_day))
+
+
+def _add_interval(day: date, repeat: str) -> date:
+    if repeat == "daily":
+        return day + timedelta(days=1)
+    if repeat == "weekly":
+        return day + timedelta(weeks=1)
+    return _add_months(day, 1)  # monthly
+
+
+def next_due_date(due_date: Optional[str], repeat: str) -> Optional[str]:
+    """Compute the next due date for a recurrence.
+
+    Anchored on the current due date to preserve cadence; when there is no
+    due date (or the cadence fell behind), anchored on today so the next
+    occurrence always lands in the future.
+    """
+    if (repeat or "none") == "none":
+        return None
+    today = utcnow().date()
+    anchor = _parse_due_day(due_date) or today
+    candidate = _add_interval(anchor, repeat)
+    if candidate <= today:
+        candidate = _add_interval(today, repeat)
+    return candidate.isoformat()
+
+
+def _spawn_next_occurrence(
+    page: Dict[str, Any], completed_doc: Dict[str, Any], user: Dict[str, Any]
+) -> Optional[Dict[str, Any]]:
+    """Create the next pending occurrence of a completed recurring task.
+
+    The completed task is never modified here (history preserved); the new
+    task copies its content/settings and links back via parent_id/series_id.
+    """
+    repeat = completed_doc.get("repeat") or "none"
+    if repeat == "none":
+        return None
+
+    series_id = completed_doc.get("series_id")
+    if not series_id:
+        # Backfill for tasks created before the repeat feature existed.
+        series_id = ObjectId()
+        todos_collection.update_one(
+            {"_id": completed_doc["_id"]}, {"$set": {"series_id": series_id}}
+        )
+        completed_doc["series_id"] = series_id
+
+    last = todos_collection.find_one(
+        {"page_id": page["_id"]}, sort=[("position", -1)]
+    )
+    position = (last["position"] + 1) if last else 0
+    now = utcnow()
+    # Carry the assignee over only if they can still be assigned.
+    assigned = completed_doc.get("assigned_to")
+    if assigned is not None:
+        allowed = {page["owner_id"], *page.get("member_ids", [])}
+        if assigned not in allowed:
+            assigned = None
+
+    doc = {
+        "page_id": page["_id"],
+        "title": completed_doc.get("title", ""),
+        "description": completed_doc.get("description", ""),
+        "status": "pending",
+        "priority": completed_doc.get("priority", "medium"),
+        "due_date": next_due_date(completed_doc.get("due_date"), repeat),
+        "category": completed_doc.get("category"),
+        "repeat": repeat,
+        "series_id": series_id,
+        "parent_id": completed_doc["_id"],
+        "position": position,
+        "created_by": user["_id"],
+        "assigned_to": assigned,
+        "updated_by": user["_id"],
+        "created_at": now,
+        "updated_at": now,
+        "completed_at": None,
+    }
+    result = todos_collection.insert_one(doc)
+    doc["_id"] = result.inserted_id
+    return doc
+
+
 def create_todo(page: Dict[str, Any], user: Dict[str, Any], data) -> Dict[str, Any]:
     last = todos_collection.find_one(
         {"page_id": page["_id"]}, sort=[("position", -1)]
     )
     position = (last["position"] + 1) if last else 0
     now = utcnow()
+    repeat = getattr(data, "repeat", "none") or "none"
+    if repeat not in TODO_REPEATS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Invalid repeat value.",
+        )
     doc = {
         "page_id": page["_id"],
         "title": data.title,
@@ -54,6 +164,11 @@ def create_todo(page: Dict[str, Any], user: Dict[str, Any], data) -> Dict[str, A
         "priority": data.priority,
         "due_date": data.due_date or None,
         "category": data.category,
+        "repeat": repeat,
+        # A series groups every occurrence spawned from one recurring task,
+        # so history stays linked even as new occurrences are created.
+        "series_id": ObjectId() if repeat != "none" else None,
+        "parent_id": None,
         "position": position,
         "created_by": user["_id"],
         "assigned_to": _assert_assignable(page, data.assigned_to),
@@ -64,6 +179,10 @@ def create_todo(page: Dict[str, Any], user: Dict[str, Any], data) -> Dict[str, A
     }
     result = todos_collection.insert_one(doc)
     doc["_id"] = result.inserted_id
+    # Creating an already-completed recurring task still schedules the next
+    # occurrence (same rule as completing it via update).
+    if doc["status"] == "completed" and doc["repeat"] != "none":
+        _spawn_next_occurrence(page, doc, user)
     return doc
 
 
@@ -101,13 +220,35 @@ def update_todo(todo: Dict[str, Any], page: Dict[str, Any], user: Dict[str, Any]
         set_fields["due_date"] = updates["due_date"] or None
     if "category" in updates:  # may be None -> clears the category
         set_fields["category"] = updates["category"]
+    if "repeat" in updates:  # none disables future recurrences (history kept)
+        new_repeat = updates["repeat"] or "none"
+        if new_repeat not in TODO_REPEATS:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Invalid repeat value.",
+            )
+        set_fields["repeat"] = new_repeat
+        # Enabling repeat on a task that predates the feature still needs a
+        # series so later occurrences link back to this history.
+        if new_repeat != "none" and not todo.get("series_id"):
+            set_fields["series_id"] = ObjectId()
     if "assigned_to" in updates:  # may be None -> unassigns the task
         set_fields["assigned_to"] = _assert_assignable(page, updates["assigned_to"])
 
     set_fields["updated_by"] = user["_id"]
     set_fields["updated_at"] = utcnow()
     todos_collection.update_one({"_id": todo["_id"]}, {"$set": set_fields})
-    return get_todo(todo["_id"])
+    fresh = get_todo(todo["_id"])
+    # Completing a recurring task schedules the next occurrence; the completed
+    # task itself is left untouched so its history/status is preserved.
+    if (
+        fresh
+        and fresh.get("status") == "completed"
+        and todo.get("status") != "completed"
+        and (fresh.get("repeat") or "none") != "none"
+    ):
+        _spawn_next_occurrence(page, fresh, user)
+    return fresh
 
 
 def delete_todo(todo: Dict[str, Any]) -> None:

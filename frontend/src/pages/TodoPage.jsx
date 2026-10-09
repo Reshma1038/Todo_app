@@ -108,6 +108,17 @@ export default function TodoPage() {
     load();
   }, [load]);
 
+  // Lightweight list refresh (no page reload). Used after a recurring task
+  // completes so the freshly scheduled next occurrence appears immediately.
+  const refreshTodos = async () => {
+    try {
+      const res = await todoApi.list(pageId);
+      setTodos(res.data);
+    } catch {
+      /* non-critical: keep the current list on failure */
+    }
+  };
+
   // ---------------------------------------------------------------
   // Drag & drop: rearrange locally, then persist explicitly via
   // the "Save Order" button (with a Discard option).
@@ -153,16 +164,28 @@ export default function TodoPage() {
         variant: next === "completed" ? "success" : "pending",
         title: todo.title,
       });
+      // A completed recurring task spawns its next occurrence server-side;
+      // refresh so it shows up right away.
+      if (next === "completed" && res.data.repeat && res.data.repeat !== "none") {
+        await refreshTodos();
+        toast.info("Next occurrence scheduled 🔁");
+      }
     } catch (err) {
       toast.error(getErrorMessage(err, "Could not update the task."));
     }
   };
 
-  const applyUpdated = (updated) => {
+  const applyUpdated = async (updated) => {
     const before = (todos || []).find((t) => t.id === updated.id);
     if (before) {
       if (before.status !== "completed" && updated.status === "completed") {
         setStatusPopup({ variant: "success", title: updated.title });
+        if (updated.repeat && updated.repeat !== "none") {
+          setTodos((list) => list.map((t) => (t.id === updated.id ? updated : t)));
+          await refreshTodos();
+          toast.info("Next occurrence scheduled 🔁");
+          return;
+        }
       } else if (before.status === "completed" && updated.status !== "completed") {
         setStatusPopup({ variant: "pending", title: updated.title });
       }
@@ -208,6 +231,10 @@ export default function TodoPage() {
       setTodos((list) => list.map((t) => (t.id === todo.id ? res.data : t)));
       setNextTaskData(null);
       setStatusPopup({ variant: "success", title: todo.title });
+      if (res.data.repeat && res.data.repeat !== "none") {
+        await refreshTodos();
+        toast.info("Next occurrence scheduled 🔁");
+      }
     } catch (err) {
       toast.error(getErrorMessage(err, "Could not update the task."));
     }
