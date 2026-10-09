@@ -20,8 +20,8 @@ $h = @{ Authorization = "Bearer $($reg.access_token)" }
 $d = Get-Date
 while ($d.DayOfWeek -ne 'Friday') { $d = $d.AddDays(1) }
 $expectedFriday = $d.ToString('yyyy-MM-dd')
-$tomorrow = (Get-Date).AddDays(1).ToString('yyyy-MM-dd')
-$yesterday = (Get-Date).AddDays(-1).ToString('yyyy-MM-dd')
+$today = (Get-Date).ToString('yyyy-MM-dd')
+$tomorrow  = (Get-Date).AddDays(1).ToString('yyyy-MM-dd')
 
 Write-Host "`n=== PARSE TASK ===" -ForegroundColor Cyan
 $r = Invoke-RestMethod -Method Post -Uri "$base/ai/parse-task" -Headers $h -ContentType "application/json" -Body (@{ text = "Complete the project report by Friday, this is very important." } | ConvertTo-Json)
@@ -61,21 +61,21 @@ Check "neutral -> medium" ($r.priority -eq "medium") "got $($r.priority)"
 
 Write-Host "`n=== NEXT TASK ===" -ForegroundColor Cyan
 $page = Invoke-RestMethod -Method Post -Uri "$base/pages" -Headers $h -ContentType "application/json" -Body (@{ title = "AI Analysis Page" } | ConvertTo-Json)
-Invoke-RestMethod -Method Post -Uri "$base/pages/$($page.id)/todos" -Headers $h -ContentType "application/json" -Body (@{ title = "Urgent overdue report"; priority = "high"; due_date = $yesterday; category = "Work" } | ConvertTo-Json) | Out-Null
+Invoke-RestMethod -Method Post -Uri "$base/pages/$($page.id)/todos" -Headers $h -ContentType "application/json" -Body (@{ title = "Urgent report due today"; priority = "high"; due_date = $today; category = "Work" } | ConvertTo-Json) | Out-Null
 Invoke-RestMethod -Method Post -Uri "$base/pages/$($page.id)/todos" -Headers $h -ContentType "application/json" -Body (@{ title = "Someday cleanup"; priority = "low"; due_date = (Get-Date).AddDays(10).ToString('yyyy-MM-dd') } | ConvertTo-Json) | Out-Null
 Invoke-RestMethod -Method Post -Uri "$base/pages/$($page.id)/todos" -Headers $h -ContentType "application/json" -Body (@{ title = "Regular task"; priority = "medium" } | ConvertTo-Json) | Out-Null
-Invoke-RestMethod -Method Post -Uri "$base/pages/$($page.id)/todos" -Headers $h -ContentType "application/json" -Body (@{ title = "Done task"; status = "completed"; priority = "high"; due_date = $yesterday } | ConvertTo-Json) | Out-Null
+Invoke-RestMethod -Method Post -Uri "$base/pages/$($page.id)/todos" -Headers $h -ContentType "application/json" -Body (@{ title = "Done task"; status = "completed"; priority = "high"; due_date = $today } | ConvertTo-Json) | Out-Null
 
 $r = Invoke-RestMethod -Method Get -Uri "$base/ai/next-task?page_id=$($page.id)" -Headers $h
 "  -> suggestion='$($r.suggestion.todo.title)' score=$($r.suggestion.score) analyzed=$($r.analyzed)"
-Check "suggestion = urgent overdue report" ($r.suggestion.todo.title -eq "Urgent overdue report") "got '$($r.suggestion.todo.title)'"
+Check "suggestion = urgent report due today" ($r.suggestion.todo.title -eq "Urgent report due today") "got '$($r.suggestion.todo.title)'"
 Check "completed task excluded (analyzed=3)" ($r.analyzed -eq 3) "got $($r.analyzed)"
 Check "explanation present" (-not [string]::IsNullOrEmpty($r.suggestion.explanation)) ""
 Check "reasons present" ($r.suggestion.reasons.Count -ge 2) ""
 Check "alternatives = 2, sorted" ((As-Array $r.alternatives).Count -eq 2 -and (As-Array $r.alternatives)[0].score -ge (As-Array $r.alternatives)[1].score) ""
 
 $r2 = Invoke-RestMethod -Method Get -Uri "$base/ai/next-task" -Headers $h
-Check "global next-task also picks it" ($r2.suggestion.todo.title -eq "Urgent overdue report") "got '$($r2.suggestion.todo.title)'"
+Check "global next-task also picks it" ($r2.suggestion.todo.title -eq "Urgent report due today") "got '$($r2.suggestion.todo.title)'"
 
 Write-Host "`n=== CATEGORY FIELD ===" -ForegroundColor Cyan
 $t = Invoke-RestMethod -Method Post -Uri "$base/pages/$($page.id)/todos" -Headers $h -ContentType "application/json" -Body (@{ title = "Categorized task"; category = "Study" } | ConvertTo-Json)
@@ -84,6 +84,20 @@ $t2 = Invoke-RestMethod -Method Patch -Uri "$base/todos/$($t.id)" -Headers $h -C
 Check "update category" ($t2.category -eq "Health") "got $($t2.category)"
 $t3 = Invoke-RestMethod -Method Patch -Uri "$base/todos/$($t.id)" -Headers $h -ContentType "application/json" -Body (@{ category = $null } | ConvertTo-Json)
 Check "clear category" ($null -eq $t3.category) "got $($t3.category)"
+
+Write-Host "`n=== DUE DATE VALIDATION (no past dates) ===" -ForegroundColor Cyan
+try {
+  Invoke-RestMethod -Method Post -Uri "$base/pages/$($page.id)/todos" -Headers $h -ContentType "application/json" -Body (@{ title = "Past task"; due_date = (Get-Date).AddDays(-1).ToString('yyyy-MM-dd') } | ConvertTo-Json) | Out-Null
+  Check "create with past due date -> 422" ($false) ""
+} catch {
+  $code = [int]$_.Exception.Response.StatusCode
+  Check "create with past due date -> 422" ($code -eq 422) "got $code"
+  Check "clear past-date message" ($_.ErrorDetails.Message -match "cannot be in the past") "got $($_.ErrorDetails.Message)"
+}
+try {
+  Invoke-RestMethod -Method Patch -Uri "$base/todos/$($t.id)" -Headers $h -ContentType "application/json" -Body (@{ due_date = (Get-Date).AddDays(-2).ToString('yyyy-MM-dd') } | ConvertTo-Json) | Out-Null
+  Check "update due date to past -> 422" ($false) ""
+} catch { Check "update due date to past -> 422" ([int]$_.Exception.Response.StatusCode -eq 422) "" }
 
 Write-Host "`n=== SECURITY ===" -ForegroundColor Cyan
 try {

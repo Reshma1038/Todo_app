@@ -1,3 +1,4 @@
+from datetime import date
 from typing import List, Literal, Optional
 
 from pydantic import BaseModel, field_validator
@@ -7,6 +8,8 @@ from app.schemas.user import UserBrief
 TodoStatus = Literal["pending", "in_progress", "completed"]
 TodoPriority = Literal["low", "medium", "high"]
 TodoRepeat = Literal["none", "daily", "weekly", "monthly"]
+
+PAST_DUE_MESSAGE = "Due date cannot be in the past. Please choose today or a future date."
 
 
 def _clean_title(value: str) -> str:
@@ -25,6 +28,22 @@ def _clean_category(value: Optional[str]) -> Optional[str]:
     if len(value) > 50:
         raise ValueError("Category must be at most 50 characters long.")
     return value or None
+
+
+def _validate_due_date(value: Optional[str]) -> Optional[str]:
+    """Due dates must be today or in the future — never in the past."""
+    if value is None:
+        return None
+    value = value.strip()
+    if not value:
+        return None
+    try:
+        parsed = date.fromisoformat(value)
+    except ValueError:
+        raise ValueError("Due date must be a valid date in YYYY-MM-DD format.")
+    if parsed < date.today():
+        raise ValueError(PAST_DUE_MESSAGE)
+    return value
 
 
 class TodoCreateRequest(BaseModel):
@@ -53,6 +72,11 @@ class TodoCreateRequest(BaseModel):
     @classmethod
     def validate_category(cls, value: Optional[str]) -> Optional[str]:
         return _clean_category(value)
+
+    @field_validator("due_date")
+    @classmethod
+    def validate_due_date(cls, value: Optional[str]) -> Optional[str]:
+        return _validate_due_date(value)
 
 
 class TodoUpdateRequest(BaseModel):
@@ -83,6 +107,11 @@ class TodoUpdateRequest(BaseModel):
     @classmethod
     def validate_category(cls, value: Optional[str]) -> Optional[str]:
         return _clean_category(value)
+
+    @field_validator("due_date")
+    @classmethod
+    def validate_due_date(cls, value: Optional[str]) -> Optional[str]:
+        return _validate_due_date(value)
 
 
 class TodoResponse(BaseModel):

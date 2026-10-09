@@ -16,9 +16,15 @@ $yesterday = (Get-Date).AddDays(-1).ToString('yyyy-MM-dd')
 $today     = (Get-Date).ToString('yyyy-MM-dd')
 
 $t1 = Invoke-RestMethod -Method Post -Uri "$base/pages/$($page.id)/todos" -Headers $h -ContentType "application/json" -Body (@{ title = "Done one"; priority = "high"; category = "Work" } | ConvertTo-Json)
-Invoke-RestMethod -Method Post -Uri "$base/pages/$($page.id)/todos" -Headers $h -ContentType "application/json" -Body (@{ title = "Overdue open"; priority = "high"; due_date = $yesterday } | ConvertTo-Json) | Out-Null
+Invoke-RestMethod -Method Post -Uri "$base/pages/$($page.id)/todos" -Headers $h -ContentType "application/json" -Body (@{ title = "Due today urgent"; priority = "high"; due_date = $today } | ConvertTo-Json) | Out-Null
 Invoke-RestMethod -Method Post -Uri "$base/pages/$($page.id)/todos" -Headers $h -ContentType "application/json" -Body (@{ title = "Due today open"; priority = "medium"; due_date = $today; category = "Work" } | ConvertTo-Json) | Out-Null
 Invoke-RestMethod -Method Post -Uri "$base/pages/$($page.id)/todos" -Headers $h -ContentType "application/json" -Body (@{ title = "Low open"; priority = "low"; status = "in_progress"; category = "Personal" } | ConvertTo-Json) | Out-Null
+
+# past due dates are rejected by validation
+try {
+  Invoke-RestMethod -Method Post -Uri "$base/pages/$($page.id)/todos" -Headers $h -ContentType "application/json" -Body (@{ title = "Past task"; due_date = $yesterday } | ConvertTo-Json) | Out-Null
+  Check "create with past due date -> 422" ($false) ""
+} catch { Check "create with past due date -> 422" ([int]$_.Exception.Response.StatusCode -eq 422) "" }
 
 # complete t1 -> completed_at must be set
 $c = Invoke-RestMethod -Method Patch -Uri "$base/todos/$($t1.id)" -Headers $h -ContentType "application/json" -Body (@{ status = "completed" } | ConvertTo-Json)
@@ -35,8 +41,8 @@ Check "total = 4" ($s.total_tasks -eq 4) "got $($s.total_tasks)"
 Check "completed = 1" ($s.completed -eq 1) "got $($s.completed)"
 Check "pending = 2" ($s.pending -eq 2) "got $($s.pending)"
 Check "in_progress = 1" ($s.in_progress -eq 1) "got $($s.in_progress)"
-Check "overdue = 1" ($s.overdue -eq 1) "got $($s.overdue)"
-Check "due_today = 1" ($s.due_today -eq 1) "got $($s.due_today)"
+Check "overdue = 0 (past dates rejected)" ($s.overdue -eq 0) "got $($s.overdue)"
+Check "due_today = 2" ($s.due_today -eq 2) "got $($s.due_today)"
 Check "completion_rate = 25" ($s.completion_rate -eq 25) "got $($s.completion_rate)"
 Check "completed_this_week >= 1" ($s.completed_this_week -ge 1) "got $($s.completed_this_week)"
 Check "by_priority open: high=1 medium=1 low=1" ($s.by_priority.high -eq 1 -and $s.by_priority.medium -eq 1 -and $s.by_priority.low -eq 1) "got $($s.by_priority | ConvertTo-Json -Compress)"

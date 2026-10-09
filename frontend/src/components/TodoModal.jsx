@@ -2,7 +2,7 @@ import { useState } from "react";
 import { getErrorMessage } from "../api/axios";
 import { todoApi } from "../api/todoApi";
 import { useToast } from "../context/ToastContext";
-import { getDueState } from "../utils/due";
+import { getDueState, isPastDate, PAST_DUE_MESSAGE } from "../utils/due";
 import { formatDate, formatDateOnly, REPEAT_LABELS, STATUS_LABELS, PRIORITY_LABELS } from "../utils/format";
 import { PriorityBadge, StatusBadge } from "./Badges";
 import Modal from "./Modal";
@@ -25,6 +25,10 @@ export default function TodoModal({ todo, members, startInEdit = false, onClose,
     setError("");
     if (!form.title.trim()) {
       setError("Title is required.");
+      return;
+    }
+    if (isPastDate(form.due_date)) {
+      setError(PAST_DUE_MESSAGE);
       return;
     }
     setSaving(true);

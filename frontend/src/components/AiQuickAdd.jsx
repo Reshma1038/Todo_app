@@ -4,6 +4,7 @@ import { getErrorMessage } from "../api/axios";
 import { todoApi } from "../api/todoApi";
 import { useToast } from "../context/ToastContext";
 import { PRIORITY_LABELS } from "../utils/format";
+import { isPastDate, PAST_DUE_MESSAGE, toDateOnlyString } from "../utils/due";
 import { Spinner } from "./Spinner";
 
 export const SparkleIcon = ({ className = "h-4 w-4" }) => (
@@ -68,6 +69,10 @@ export default function AiQuickAdd({ pageId, onCreated }) {
 
   const create = async () => {
     if (!parsed?.title?.trim() || creating) return;
+    if (isPastDate(parsed.due_date)) {
+      toast.error(PAST_DUE_MESSAGE);
+      return;
+    }
     setCreating(true);
     try {
       const res = await todoApi.create(pageId, {
@@ -259,6 +264,7 @@ export default function AiQuickAdd({ pageId, onCreated }) {
               <input
                 type="date"
                 value={parsed.due_date || ""}
+                min={toDateOnlyString()}
                 onChange={(e) => setParsed({ ...parsed, due_date: e.target.value || null })}
                 className="w-full rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm focus:border-violet-400 focus:outline-none focus:ring-2 focus:ring-violet-100"
               />

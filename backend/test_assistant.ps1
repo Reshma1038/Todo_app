@@ -16,7 +16,7 @@ $yesterday = (Get-Date).AddDays(-1).ToString('yyyy-MM-dd')
 $today     = (Get-Date).ToString('yyyy-MM-dd')
 $tomorrow  = (Get-Date).AddDays(1).ToString('yyyy-MM-dd')
 
-Invoke-RestMethod -Method Post -Uri "$base/pages/$($page.id)/todos" -Headers $h -ContentType "application/json" -Body (@{ title = "Fix urgent bug"; priority = "high"; due_date = $yesterday } | ConvertTo-Json) | Out-Null
+Invoke-RestMethod -Method Post -Uri "$base/pages/$($page.id)/todos" -Headers $h -ContentType "application/json" -Body (@{ title = "Fix urgent bug"; priority = "high"; due_date = $today } | ConvertTo-Json) | Out-Null
 Invoke-RestMethod -Method Post -Uri "$base/pages/$($page.id)/todos" -Headers $h -ContentType "application/json" -Body (@{ title = "Submit report"; priority = "medium"; due_date = $today } | ConvertTo-Json) | Out-Null
 Invoke-RestMethod -Method Post -Uri "$base/pages/$($page.id)/todos" -Headers $h -ContentType "application/json" -Body (@{ title = "Clean desk"; priority = "low" } | ConvertTo-Json) | Out-Null
 
@@ -33,7 +33,7 @@ Check "recommends urgent bug" ($r.answer -match "Fix urgent bug") "got: $($r.ans
 $r = Ask "Any overdue tasks?"
 "  Q: any overdue tasks? -> $($r.answer)"
 Check "kind = answer" ($r.kind -eq "answer") ""
-Check "mentions overdue bug" ($r.answer -match "Fix urgent bug") "got: $($r.answer)"
+Check "no overdue tasks reported" ($r.answer -match "Nothing is overdue") "got: $($r.answer)"
 
 $r = Ask "What's due today?"
 "  Q: what's due today? -> $($r.answer)"
@@ -41,7 +41,7 @@ Check "mentions today task" ($r.answer -match "Submit report") "got: $($r.answer
 
 $r = Ask "How many pending tasks do I have?"
 "  Q: how many -> $($r.answer)"
-Check "counts 3 pending" ($r.answer -match "3 pending") "got: $($r.answer)"
+Check "counts 3 pending, 0 overdue" ($r.answer -match "3 pending" -and $r.answer -match "0 overdue") "got: $($r.answer)"
 
 Write-Host "`n=== TASK STATEMENTS -> PARSED FIELDS ===" -ForegroundColor Cyan
 $r = Ask "Buy milk tomorrow"
@@ -70,14 +70,14 @@ $r = Ask "list down all tasks"
 "  Q: list down all tasks ->`n$($r.answer)"
 Check "kind = answer" ($r.kind -eq "answer") "got $($r.kind)"
 Check "ALL view lists every task" ($r.answer -match "Fix urgent bug" -and $r.answer -match "Submit report" -and $r.answer -match "Clean desk") "got: $($r.answer)"
-Check "ALL view has status labels" ($r.answer -match "Overdue" -and $r.answer -match "Pending") "got: $($r.answer)"
-Check "ALL view has status icons" ($r.answer -match "⚠️" -and $r.answer -match "⏳") "got: $($r.answer)"
+Check "ALL view has status labels" ($r.answer -match "Pending") "got: $($r.answer)"
+Check "ALL view has pending icon, no overdue icon" (($r.answer -match "⏳") -and ($r.answer -notmatch "⚠️")) "got: $($r.answer)"
 $r = Ask "show my tasks"
 Check "show my tasks -> pending list" ($r.answer -match "pending task" -and $r.answer -match "1\.") "got: $($r.answer)"
 
 # complete one task, then ask for completed list
 $todos = Invoke-RestMethod -Method Get -Uri "$base/pages/$($page.id)/todos" -Headers $h
-$clean = $todos | Where-Object { $_.title -eq "Clean desk" }
+$clean = @($todos | Where-Object { $_.title -eq "Clean desk" }) | Select-Object -First 1
 Invoke-RestMethod -Method Patch -Uri "$base/todos/$($clean.id)" -Headers $h -ContentType "application/json" -Body (@{ status = "completed" } | ConvertTo-Json) | Out-Null
 $r = Ask "list completed tasks"
 "  Q: list completed tasks -> $($r.answer)"
@@ -89,7 +89,13 @@ $r = Ask "list all my tasks"
 "  Q: list all my tasks ->`n$($r.answer)"
 Check "ALL view includes completed task" ($r.answer -match "Clean desk" -and $r.answer -match "Completed") "got: $($r.answer)"
 Check "ALL view includes completed icon" ($r.answer -match "✅") "got: $($r.answer)"
-Check "ALL view still shows pending + overdue" ($r.answer -match "Submit report" -and $r.answer -match "Fix urgent bug") "got: $($r.answer)"
+Check "ALL view still shows pending tasks" ($r.answer -match "Submit report" -and $r.answer -match "Fix urgent bug") "got: $($r.answer)"
+
+# past due dates are rejected by validation
+try {
+  Invoke-RestMethod -Method Post -Uri "$base/pages/$($page.id)/todos" -Headers $h -ContentType "application/json" -Body (@{ title = "Past task"; due_date = $yesterday } | ConvertTo-Json) | Out-Null
+  Check "create with past due date -> 422" ($false) ""
+} catch { Check "create with past due date -> 422" ([int]$_.Exception.Response.StatusCode -eq 422) "" }
 
 Write-Host "`n=== SECURITY ===" -ForegroundColor Cyan
 try {

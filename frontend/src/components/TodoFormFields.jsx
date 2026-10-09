@@ -1,9 +1,5 @@
-import { useState } from "react";
-import { aiApi } from "../api/aiApi";
-import { getErrorMessage } from "../api/axios";
-import { useToast } from "../context/ToastContext";
 import { PRIORITY_LABELS, REPEAT_LABELS, STATUS_LABELS } from "../utils/format";
-import { Spinner } from "./Spinner";
+import { toDateOnlyString } from "../utils/due";
 
 const CATEGORY_SUGGESTIONS = [
   "Work", "Personal", "Shopping", "Health", "Finance", "Study", "Home", "General",
@@ -11,29 +7,10 @@ const CATEGORY_SUGGESTIONS = [
 
 /**
  * Shared form fields used by both the create-todo modal and the
- * edit mode of the todo detail modal. Includes the AI priority
- * suggestion button.
+ * edit mode of the todo detail modal.
  */
 export default function TodoFormFields({ values, onChange, members, autoFocus = false }) {
-  const toast = useToast();
-  const [suggesting, setSuggesting] = useState(false);
   const set = (key) => (e) => onChange({ ...values, [key]: e.target.value });
-
-  const suggestPriority = async () => {
-    if (!values.title.trim() || suggesting) return;
-    setSuggesting(true);
-    try {
-      const res = await aiApi.suggestPriority(values.title.trim(), values.description || "");
-      onChange({ ...values, priority: res.data.priority });
-      toast.info(
-        `AI suggests ${res.data.priority.toUpperCase()} priority — ${res.data.reasons.join("; ")}`
-      );
-    } catch (err) {
-      toast.error(getErrorMessage(err, "Could not suggest a priority."));
-    } finally {
-      setSuggesting(false);
-    }
-  };
 
   return (
     <div className="space-y-4">
@@ -79,19 +56,7 @@ export default function TodoFormFields({ values, onChange, members, autoFocus = 
         </div>
 
         <div>
-          <div className="mb-1 flex items-center justify-between">
-            <label className="block text-sm font-medium text-slate-700">Priority</label>
-            <button
-              type="button"
-              onClick={suggestPriority}
-              disabled={suggesting || !values.title.trim()}
-              title="Let AI suggest the priority from the title & description"
-              className="inline-flex items-center gap-1 rounded-md border border-violet-200 px-2 py-0.5 text-xs font-medium text-violet-700 hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              {suggesting ? <Spinner className="h-3 w-3" /> : "✨"}
-              AI suggest
-            </button>
-          </div>
+          <label className="mb-1 block text-sm font-medium text-slate-700">Priority</label>
           <select
             value={values.priority}
             onChange={set("priority")}
@@ -108,6 +73,7 @@ export default function TodoFormFields({ values, onChange, members, autoFocus = 
           <input
             type="date"
             value={values.due_date || ""}
+            min={toDateOnlyString()}
             onChange={set("due_date")}
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100"
           />

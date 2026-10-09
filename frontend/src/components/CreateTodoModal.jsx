@@ -2,6 +2,7 @@ import { useState } from "react";
 import { getErrorMessage } from "../api/axios";
 import { todoApi } from "../api/todoApi";
 import { useToast } from "../context/ToastContext";
+import { isPastDate, PAST_DUE_MESSAGE } from "../utils/due";
 import Modal from "./Modal";
 import { Spinner } from "./Spinner";
 import TodoFormFields, { EMPTY_TODO_FORM, formToPayload } from "./TodoFormFields";
@@ -17,6 +18,10 @@ export default function CreateTodoModal({ pageId, members, onClose, onCreated })
     setError("");
     if (!form.title.trim()) {
       setError("Title is required.");
+      return;
+    }
+    if (isPastDate(form.due_date)) {
+      setError(PAST_DUE_MESSAGE);
       return;
     }
     setSaving(true);
